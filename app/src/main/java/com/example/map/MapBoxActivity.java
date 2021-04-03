@@ -7,7 +7,6 @@ import android.content.pm.PackageManager;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -18,9 +17,9 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import com.google.gson.JsonObject;
 import com.mapbox.android.core.permissions.PermissionsListener;
 import com.mapbox.android.core.permissions.PermissionsManager;
-import com.mapbox.api.directions.v5.models.DirectionsResponse;
 import com.mapbox.api.directions.v5.models.DirectionsRoute;
 import com.mapbox.api.geocoding.v5.models.CarmenFeature;
 import com.mapbox.geojson.Feature;
@@ -44,15 +43,8 @@ import com.mapbox.mapboxsdk.plugins.places.autocomplete.model.PlaceOptions;
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer;
 import com.mapbox.mapboxsdk.style.sources.GeoJsonSource;
 import com.mapbox.navigation.ui.route.NavigationMapRoute;
-import com.mapbox.services.android.navigation.ui.v5.NavigationLauncher;
-import com.mapbox.services.android.navigation.ui.v5.NavigationLauncherOptions;
-import com.mapbox.services.android.navigation.v5.navigation.NavigationRoute;
 
 import java.util.List;
-
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
 
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconAllowOverlap;
 import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconIgnorePlacement;
@@ -63,7 +55,7 @@ import static com.mapbox.mapboxsdk.style.layers.PropertyFactory.iconOffset;
 /**
  * Display {@link SymbolLayer} icons on the map.
  */
-public class MapBox extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener, MapboxMap.OnMapClickListener {
+public class MapBoxActivity extends AppCompatActivity implements OnMapReadyCallback, PermissionsListener, MapboxMap.OnMapClickListener {
     private static final String SOURCE_ID = "SOURCE_ID";
     private static final String ICON_ID = "ICON_ID";
     private static final String LAYER_ID = "LAYER_ID";
@@ -83,6 +75,7 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
     private static final String TAG = "DirectionsActivity";
     private NavigationMapRoute navigationMapRoute;
     //search variables
+    private static final int REQUEST_CODE_AUTOCOMPLETE = 1;
     private CarmenFeature home;
     private CarmenFeature work;
     private String geojsonSourceLayerId = "geojsonSourceLayerId";
@@ -134,7 +127,6 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
             }
         });
     }
-//search
     private void initSearchFab() {
         findViewById(R.id.fab_location_search).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -144,13 +136,26 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
                         .placeOptions(PlaceOptions.builder()
                                 .backgroundColor(Color.parseColor("#EEEEEE"))
                                 .limit(10)
-                                .addInjectedFeature(home)
-                                .addInjectedFeature(work)
                                 .build(PlaceOptions.MODE_CARDS))
-                        .build(MapBox.this);
+                        .build(MapBoxActivity.this);
                 startActivityForResult(intent, REQUEST_CODE_AUTOCOMPLETE);
             }
         });
+    }
+    private void addUserLocations() {
+        home = CarmenFeature.builder().text("Mapbox SF Office")
+                .geometry(Point.fromLngLat(-122.3964485, 37.7912561))
+                .placeName("50 Beale St, San Francisco, CA")
+                .id("mapbox-sf")
+                .properties(new JsonObject())
+                .build();
+
+        work = CarmenFeature.builder().text("Mapbox DC Office")
+                .placeName("740 15th Street NW, Washington DC")
+                .geometry(Point.fromLngLat(-77.0338348, 38.899750))
+                .id("mapbox-dc")
+                .properties(new JsonObject())
+                .build();
     }
     private void setUpSource(@NonNull Style loadedMapStyle) {
         loadedMapStyle.addSource(new GeoJsonSource(geojsonSourceLayerId));
@@ -162,6 +167,9 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
                 iconOffset(new Float[] {0f, -8f})
         ));
     }
+
+
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -203,7 +211,7 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
 
 // Add the SymbolLayer icon image to the map style
                 .withImage(ICON_ID, BitmapFactory.decodeResource(
-                        MapBox.this.getResources(), R.drawable.mapbox_marker_icon_default))
+                        MapBoxActivity.this.getResources(), R.drawable.mapbox_marker_icon_default))
 
 // Adding a GeoJson source for the SymbolLayer icons.
                 .withLayer(new SymbolLayer(LAYER_ID, SOURCE_ID)
@@ -217,38 +225,32 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
             public void onStyleLoaded(@NonNull Style style) {
                 enableLocationComponent(style);
 
+                initSearchFab();
+
+                addUserLocations();
+
+// Create an empty GeoJSON source using the empty feature collection
+                setUpSource(style);
+
+// Set up a new symbol layer for displaying the searched location's feature coordinates
+                setupLayer(style);
+
 // Map is set up and the style has loaded. Now you can add additional data or make other map adjustments.
                 buildingPlugin = new BuildingPlugin(mapView, mapboxMap, style);
                 buildingPlugin.setMinZoomLevel(15f);
                 buildingPlugin.setVisibility(true);
 
                 addDestinationIconSymbolLayer(style);
-                mapboxMap.addOnMapClickListener(MapBox.this);
+                mapboxMap.addOnMapClickListener(MapBoxActivity.this);
 
-                startButton = findViewById(R.id.startButton);
-                startButton.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        boolean simulateRoute = true;
 
-                        CameraPosition initialPosition = new CameraPosition.Builder()
-                                .zoom(25.5)
-                                .build();
-
-                        NavigationLauncherOptions options = NavigationLauncherOptions.builder()
-                                .directionsRoute(currentRoute).initialMapCameraPosition(initialPosition).build();
-
-// Call this method with Context from within an Activity
-                        NavigationLauncher.startNavigation(MapBox.this, options);
-                    }
-                });
 
             }
 
 
             private void addDestinationIconSymbolLayer(@NonNull Style loadedMapStyle) {
                 loadedMapStyle.addImage("destination-icon-id",
-                        BitmapFactory.decodeResource(this.getResources(), R.drawable.mapbox_marker_icon_default));
+                        BitmapFactory.decodeResource(MapBoxActivity.this.getResources(), R.drawable.mapbox_marker_icon_default));
                 GeoJsonSource geoJsonSource = new GeoJsonSource("destination-source-id");
                 loadedMapStyle.addSource(geoJsonSource);
                 SymbolLayer destinationSymbolLayer = new SymbolLayer("destination-symbol-layer-id", "destination-source-id");
@@ -262,16 +264,16 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
         });
     }
 
-    @SuppressWarnings( {"MissingPermission"})
 
-    private void getRoute(Point origin, Point destination) {
+
+  /*  private void getRoute(Point origin, Point destination) {
         NavigationRoute.builder(this)
                 .accessToken(Mapbox.getAccessToken())
                 .origin(origin)
                 .destination(destination)
                 .build()
                 .getRoute(new Callback<DirectionsResponse>() {
-            @Override
+           @Override
             public void onResponse(Call<DirectionsResponse> call, Response<DirectionsResponse> response) {
 // You can get the generic HTTP info about the response
                 Log.d(TAG, "Response code: " + response.code());
@@ -302,7 +304,7 @@ public class MapBox extends AppCompatActivity implements OnMapReadyCallback, Per
                 Log.e(TAG, "Error: " + throwable.getMessage());
             }
         });
-    }
+    } */
     @SuppressWarnings( {"MissingPermission"})
 
     private void enableLocationComponent(@NonNull Style loadedMapStyle) {
